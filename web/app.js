@@ -2284,13 +2284,16 @@ async function goalAction(action) {
 }
 
 function classifyPath(path) {
-  if (path.startsWith("02-Projects/")) return "project";
-  if (path.startsWith("03-Knowledge/")) return "knowledge";
-  if (path.startsWith("04-Content/")) return "content";
-  if (path.startsWith("05-Prompts/")) return "prompt";
-  if (path.startsWith("06-Business/")) return "business";
-  if (path.startsWith("98-Skills/")) return "skill";
-  if (path.startsWith("00-System/")) return "system";
+  // Case-insensitive: vault folders may be created as "03-knowledge" or
+  // "03-Knowledge" etc.; both must classify the same way.
+  const lowered = String(path).toLowerCase();
+  if (lowered.startsWith("02-projects/")) return "project";
+  if (lowered.startsWith("03-knowledge/")) return "knowledge";
+  if (lowered.startsWith("04-content/")) return "content";
+  if (lowered.startsWith("05-prompts/")) return "prompt";
+  if (lowered.startsWith("06-business/")) return "business";
+  if (lowered.startsWith("98-skills/")) return "skill";
+  if (lowered.startsWith("00-system/")) return "system";
   return "other";
 }
 
