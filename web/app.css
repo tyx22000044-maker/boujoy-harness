@@ -245,7 +245,7 @@ html[data-theme="dark"] .stop-button:hover { color: #14151a; background: #e06c60
 .message-label { margin-bottom: 7px; color: var(--blue); font: 600 10px var(--mono); letter-spacing: .08em; }
 .message.user .message-label { color: var(--pink); text-align: right; }
 .message-body { padding: 15px 17px; color: var(--text); background: var(--panel-solid); border: 1px solid var(--line); border-radius: var(--r-lg); box-shadow: var(--shadow); font-size: 13.5px; line-height: 1.8; white-space: pre-wrap; overflow-wrap: anywhere; }
-.message.user .message-body { background: color-mix(in srgb, var(--yellow) 9%, var(--panel-solid)); border-color: color-mix(in srgb, var(--yellow) 26%, var(--line)); }
+.message.user .message-body { padding: 8px 13px; line-height: 1.55; background: color-mix(in srgb, var(--yellow) 9%, var(--panel-solid)); border-color: color-mix(in srgb, var(--yellow) 26%, var(--line)); }
 /* The punk-era clip capped tall pastes with calc(100% - 36px); rounded cards
    keep long content safe with extra bottom padding instead. */
 .message.user.long-content .message-body { padding-bottom: 32px; }
@@ -627,7 +627,7 @@ dialog::backdrop { background: rgba(30, 26, 20, .42); backdrop-filter: blur(6px)
 .message-stats { display: flex; flex-wrap: wrap; gap: 4px 14px; margin: 9px 2px 0; padding-top: 7px; border-top: 1px solid var(--line); }
 .message-stats span { color: var(--muted); font: 500 10.5px var(--read); }
 .message-stamp { margin-left: 8px; color: var(--muted); font: 500 10px var(--read); opacity: .8; }
-.message-actions { position: absolute; top: -11px; right: 0; z-index: 2; display: flex; gap: 6px; opacity: 0; transition: opacity .18s ease; }
+.message-actions { position: absolute; top: 0; right: 0; z-index: 2; display: flex; gap: 6px; opacity: 0; transition: opacity .18s ease; }
 .message:hover .message-actions, .message:focus-within .message-actions { opacity: 1; }
 .message.user .message-actions { right: auto; left: 0; }
 .message-copy { padding: 3px 9px; border: 1px solid var(--line); border-radius: 4px; color: var(--muted); background: var(--panel-solid); font: 500 10.5px var(--read); cursor: pointer; transition: background .15s ease, color .15s ease; }
