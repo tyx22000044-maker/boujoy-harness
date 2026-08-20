@@ -1551,6 +1551,10 @@ function foldHistory(events) {
   const output = [];
   const activities = [];
   const notices = [];
+  // Tool steps that belong to the turn currently being folded. They are
+  // attached to the next assistant message so the stream can show the full
+  // execution (thinking + tool calls + answer), not just the final text.
+  let pendingTools = [];
   let turnToolCount = 0;
   let currentTurn = null;
   let currentStep = 0;
@@ -1664,13 +1668,14 @@ function foldHistory(events) {
       const thought = timing?.stepStartTime && timing?.completedTime
         ? `模型生成 ${formatDuration(Math.max(0, timing.completedTime - timing.stepStartTime))}`
         : (turnToolCount ? `已完成 ${turnToolCount} 个工具步骤` : "已完成回答");
-      if (text) output.push({ role: "assistant", text, thought, hasReasoning, reasoningText, usage, timing, id: message.id || event.id });
+      if (text) output.push({ role: "assistant", text, thought, hasReasoning, reasoningText, usage, timing, id: message.id || event.id, tools: pendingTools.splice(0) });
     } else if (type === "tool/call") {
       const view = event.view || data.view || {};
       const title = view.title || data.name || data.toolName || "工具调用";
       const detail = view.rawInput != null ? view.rawInput : (view.command || data.input || data.arguments || "");
       const activity = { kind: "call", title, detail, id: data.callId || event.id };
       activities.push(activity);
+      pendingTools.push(activity);
       turnToolCount += 1;
     } else if (type === "tool/result") {
       const view = event.view || data.view || {};
@@ -1695,9 +1700,16 @@ function foldHistory(events) {
       if (!detail) detail = data.output || data.result || data.text || "";
       const activity = { kind: "result", title, detail, id: data.callId || event.id };
       activities.push(activity);
+      pendingTools.push(activity);
     }
   }
   return { output, activities, notices };
+}
+
+function toolStepHtml(tool, open = false) {
+  const detail = typeof tool.detail === "string" ? tool.detail : tool.detail ? JSON.stringify(tool.detail, null, 2) : "";
+  const label = tool.kind === "call" ? "执行" : "完成";
+  return `<details class="activity-tool inline-tool"${open ? " open" : ""}><summary><strong>${escapeHtml(label)} · ${escapeHtml(tool.title)}</strong><span>详情</span></summary>${detail ? `<pre>${escapeHtml(String(detail).slice(0, 4000))}</pre>` : '<p class="muted">没有附加信息</p>'}</details>`;
 }
 
 function renderHistory(events, { force = false } = {}) {
@@ -1773,7 +1785,10 @@ function renderHistory(events, { force = false } = {}) {
     const bodyHtml = item.streaming
       ? `${escapeHtml(item.text)}<span class="stream-cursor" aria-hidden="true"></span>`
       : `${markdown(item.text)}${item.streaming ? '<span class="stream-cursor" aria-hidden="true"></span>' : ""}`;
-    return `<article class="message ${item.role}${item.pending ? " pending" : ""}${item.waiting ? " waiting" : ""}${item.streaming ? " streaming" : ""}"><div class="message-label">${item.role === "user" ? `YOU / 你${item.delivery ? ` · ${item.delivery === "steer" ? "引导当前任务" : "排到下一条"}` : ""}${item.pending ? " · 发送中" : item.phase === "steering" ? " · 已送入下一步，等待当前步骤结束" : item.phase === "queued" ? " · 已排队" : item.accepted ? " · 已进入当前执行" : ""}` : `XU4N AGENT${item.streaming ? " · 正在生成" : ""}`}${stamp ? `<span class="message-stamp">${stamp}</span>` : ""}</div>${item.role === "assistant" && item.thought ? `<div class="thought-summary"><b>${item.hasReasoning ? "推理摘要" : "执行摘要"}</b><span>${escapeHtml(item.thought)}</span></div>` : ""}${item.role === "assistant" && item.reasoningText ? `<details class="thinking-block"><summary>💭 思考过程</summary><div class="thinking-content">${escapeHtml(item.reasoningText)}</div></details>` : ""}<div class="message-body">${bodyHtml}</div>${stats}<div class="message-actions"><button type="button" class="message-copy" data-copy-text="${escapeHtml(item.text)}" title="复制这条消息">⧉ 复制</button></div></article>`;
+    const toolsHtml = item.role === "assistant" && Array.isArray(item.tools) && item.tools.length
+      ? item.tools.map(tool => toolStepHtml(tool, true)).join("")
+      : "";
+    return `<article class="message ${item.role}${item.pending ? " pending" : ""}${item.waiting ? " waiting" : ""}${item.streaming ? " streaming" : ""}"><div class="message-label">${item.role === "user" ? `YOU / 你${item.delivery ? ` · ${item.delivery === "steer" ? "引导当前任务" : "排到下一条"}` : ""}${item.pending ? " · 发送中" : item.phase === "steering" ? " · 已送入下一步，等待当前步骤结束" : item.phase === "queued" ? " · 已排队" : item.accepted ? " · 已进入当前执行" : ""}` : `XU4N AGENT${item.streaming ? " · 正在生成" : ""}`}${stamp ? `<span class="message-stamp">${stamp}</span>` : ""}</div>${item.role === "assistant" && item.thought ? `<div class="thought-summary"><b>${item.hasReasoning ? "推理摘要" : "执行摘要"}</b><span>${escapeHtml(item.thought)}</span></div>` : ""}${item.role === "assistant" && item.reasoningText ? `<details class="thinking-block" open><summary>💭 思考过程</summary><div class="thinking-content">${escapeHtml(item.reasoningText)}</div></details>` : ""}${toolsHtml}<div class="message-body">${bodyHtml}</div>${stats}<div class="message-actions"><button type="button" class="message-copy" data-copy-text="${escapeHtml(item.text)}" title="复制这条消息">⧉ 复制</button></div></article>`;
   }).join("");
   // The user card intentionally has a cut-paper bottom edge. Its original
   // percentage-height diagonal looks identical for normal prompts, but can
@@ -1783,10 +1798,7 @@ function renderHistory(events, { force = false } = {}) {
     const body = message.querySelector(".message-body");
     message.classList.toggle("long-content", Boolean(body && body.offsetHeight > 420));
   });
-  $("#toolActivity").innerHTML = activities.slice(-12).reverse().map(item => {
-    const detail = typeof item.detail === "string" ? item.detail : item.detail ? JSON.stringify(item.detail, null, 2) : "";
-    return `<details class="activity-tool"><summary><strong>${escapeHtml(item.kind === "call" ? "执行" : "完成")} · ${escapeHtml(item.title)}</strong><span>详情</span></summary>${detail ? `<pre>${escapeHtml(detail.slice(0, 4000))}</pre>` : '<p class="muted">没有附加信息</p>'}</details>`;
-  }).join("") || '<p class="muted">工具调用将在这里实时展开。</p>';
+  $("#toolActivity").innerHTML = activities.slice(-12).reverse().map(item => toolStepHtml(item, false)).join("") || '<p class="muted">工具调用将在这里实时展开。</p>';
   // Preserve the reader's position by offset-from-bottom: after innerHTML is
   // rebuilt the old scrollTop is meaningless (content shifted), but the
   // distance from the bottom is stable. Readers scrolled up keep their place;
@@ -3079,10 +3091,17 @@ function bindEvents() {
   messageStream.addEventListener("scroll", () => {
     const stream = messageStream;
     const atBottom = stream.scrollHeight - stream.scrollTop - stream.clientHeight < 72;
-    if (!atBottom) {
+    const recentManual = performance.now() - state.lastManualScrollAt < 1000;
+    if (atBottom) {
+      if (!state.liveResponse || recentManual) {
+        state.userScrolledUp = false;
+      }
+    } else if (recentManual) {
+      // Only enter "reading mode" on a genuine recent user scroll (wheel/touch,
+      // recorded by suspendLiveFollow). Content growth from expanded thinking /
+      // inline tool steps, or our own offset-restore scroll, must NOT latch
+      // this flag, or auto-follow freezes right after a tall reply lands.
       state.userScrolledUp = true;
-    } else if (!state.liveResponse || performance.now() - state.lastManualScrollAt < 600) {
-      state.userScrolledUp = false;
     }
     if (stream.scrollTop < 160 && state.historyHasMore && !state.historyLoadingOlder) {
       loadOlderHistory();
