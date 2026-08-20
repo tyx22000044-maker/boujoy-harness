@@ -21,6 +21,7 @@ import signal
 import shutil
 import socket
 import socketserver
+import ssl
 import subprocess
 import sys
 import threading
@@ -202,7 +203,33 @@ TOOLS_SOURCES = [
     {"name": "TechCrunch AI", "url": "https://techcrunch.com/category/artificial-intelligence/feed/"},
 ]
 
-_NEWS_OPENER = urllib.request.build_opener(urllib.request.ProxyHandler({}))
+def _build_ssl_context():
+    """Best-effort SSL context with a usable CA bundle.
+
+    macOS python.org builds ship with an empty system trust store, so the
+    default context loads zero CAs and every HTTPS feed fails certificate
+    verification (news silently comes back empty). Prefer certifi's bundle
+    when installed; otherwise fall back to the default context, which works
+    on Linux/WSL where the OS provides a real trust store.
+    """
+    try:
+        import certifi
+        return ssl.create_default_context(cafile=certifi.where())
+    except Exception:
+        pass
+    ctx = ssl.create_default_context()
+    try:
+        if not ctx.get_ca_certs():
+            ctx.set_default_verify_paths()
+    except Exception:
+        pass
+    return ctx
+
+
+_NEWS_OPENER = urllib.request.build_opener(
+    urllib.request.ProxyHandler({}),
+    urllib.request.HTTPSHandler(context=_build_ssl_context()),
+)
 _NEWS_OPENER.addheaders = [("User-Agent", "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) BoujoyHarness/1.0")]
 _NEWS_CACHE_SCHEMA = 3
 
@@ -368,7 +395,7 @@ def _fetch_rss_feed(source: dict[str, str], limit: int = 12) -> list[dict[str, A
     try:
         request = urllib.request.Request(source["url"])
         with _NEWS_OPENER.open(request, timeout=25) as response:
-            data = response.read(500000)
+            data = response.read(3_000_000)
         root = ET.fromstring(data)
     except Exception:
         return []

@@ -34,6 +34,12 @@ while (( $# )); do
 done
 
 INSTALLED_CONFIG="${DESKTOP_APP}/Contents/Resources/boujoy-config.json"
+# Fall back to the legacy app name so a machine that still has the old
+# "Boujoy Harness.app" installed can supply its vault/dsh/python paths while
+# the renamed "XU4N Harness.app" does not exist yet.
+if [[ ! -f "${INSTALLED_CONFIG}" && -f "${HOME}/Desktop/Boujoy Harness.app/Contents/Resources/boujoy-config.json" ]]; then
+  INSTALLED_CONFIG="${HOME}/Desktop/Boujoy Harness.app/Contents/Resources/boujoy-config.json"
+fi
 installed_config_value() {
   [[ -f "${INSTALLED_CONFIG}" ]] || return 1
   /usr/bin/plutil -extract "$1" raw "${INSTALLED_CONFIG}" 2>/dev/null
