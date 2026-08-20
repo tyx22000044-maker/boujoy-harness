@@ -1154,7 +1154,7 @@ class BoujoyHandler(BaseHTTPRequestHandler):
             self._deny_access()
             return
         if path == "/api/heartbeat":
-            self._json({"ok": True, "product": "Boujoy Harness"})
+            self._json({"ok": True, "product": "XU4N Harness"})
             return
         if path == "/api/health":
             # This is intentionally the product gateway's readiness signal.

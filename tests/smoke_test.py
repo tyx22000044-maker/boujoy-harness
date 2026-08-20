@@ -286,7 +286,7 @@ def isolated_gateway_checks() -> list[str]:
             passed.append("session log deletion + recoverable trash")
 
             status, page = request(origin + "/")
-            assert status == 200 and "Boujoy Harness" in page
+            assert status == 200 and "XU4N Harness" in page
             assert "iframe" not in page.lower() and "预览版" not in page
             passed.append("new product shell (no embedded legacy UI)")
 
@@ -337,7 +337,7 @@ def isolated_gateway_checks() -> list[str]:
             assert "item.rpcId === frame.questionRpcId" in app_js
             assert "item.approvalId === frame.approvalId || item.rpcId === message.rpcId" not in app_js
             assert "Math.ceil(remaining / 20)" not in app_js
-            assert "[Boujoy] respondToServer" in app_js and "resolvingInterrupt" in app_js
+            assert "[XU4N] respondToServer" in app_js and "resolvingInterrupt" in app_js
             assert "not[-\\s]?pending" in app_js
             assert "previousServerPid" in app_js and 'jsonFetch("/api/app/restart"' in app_js
             assert "platformModifier = event.metaKey || event.ctrlKey" in app_js

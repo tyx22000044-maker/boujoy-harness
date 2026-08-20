@@ -231,7 +231,7 @@ async function jsonFetch(url, options = {}, timeoutMs = 15000) {
     // Remote access without a code (or with a wrong one): prompt once, save,
     // and retry the same request. Local calls never hit this path.
     if (response.status === 401) {
-      const code = window.prompt("Boujoy 手机访问需要访问码（在 Mac 桌面 Boujoy-访问码.txt 中查看）：");
+      const code = window.prompt("XU4N 手机访问需要访问码（在 Mac 桌面 XU4N-访问码.txt 中查看）：");
       if (!code) throw new Error("未输入访问码");
       localStorage.setItem("boujoy-access-code", code.trim());
       request.headers = new Headers(options.headers || {});
@@ -289,7 +289,7 @@ async function remoteCommand(line, mode = state.mode) {
 async function respondToServer(rpcIdValue, value, mode = state.mode) {
   // Keep the diagnostic useful without printing a user's answer or approval
   // payload into the Web Inspector.
-  console.debug("[Boujoy] respondToServer", { rpcId: rpcIdValue, mode, valueKind: typeof value });
+  console.debug("[XU4N] respondToServer", { rpcId: rpcIdValue, mode, valueKind: typeof value });
   const body = { type: "client-response", rpcId: rpcIdValue, result: { ok: true, value } };
   const headers = { "Content-Type": "application/json" };
   const code = localStorage.getItem("boujoy-access-code") || "";
@@ -743,8 +743,8 @@ function native(action, extra = {}) {
 }
 
 async function restartBoujoy() {
-  if (!confirm("重启 Boujoy Harness？当前运行中的任务会停止。")) return;
-  toast("正在重启 Boujoy Harness…");
+  if (!confirm("重启 XU4N Harness？当前运行中的任务会停止。")) return;
+  toast("正在重启 XU4N Harness…");
   if (native("restart")) return;
   try {
     const result = await jsonFetch("/api/app/restart", { method: "POST" });
@@ -1480,8 +1480,20 @@ function updateLiveResponse(event, sessionId = state.sessionId, target = state) 
     // deliberately renders text only, so raw reasoning and tool-call JSON
     // remain hidden, but completed text blocks can still land immediately.
     if (!["text-delta", "block-start", "block-end", "reasoning-delta", "tool-call-delta", "usage", "finish"].includes(chunk.type)) return true;
-    if (chunk.type === "reasoning-delta" || chunk.type === "tool-call-delta" || chunk.type === "usage" || chunk.type === "finish") return true;
     const key = streamIdentity(data);
+    // Capture reasoning deltas into a collapsible "thinking" buffer instead of
+    // discarding them, so users can inspect the model's reasoning on demand.
+    if (chunk.type === "reasoning-delta") {
+      if (!target.liveResponse || target.liveResponse.sessionId !== sessionId || target.liveResponse.key !== key) {
+        target.liveResponse = { sessionId, key, startSeq: sessionEventSeq(event), text: "", receivedText: "", textBlocks: [], reasoning: true, reasoningText: "", finalEvent: null };
+      }
+      const liveReasoning = target.liveResponse;
+      liveReasoning.reasoning = true;
+      liveReasoning.reasoningText = (liveReasoning.reasoningText || "") + String(chunk.text ?? chunk.delta ?? "");
+      if (target === state) scheduleLivePump();
+      return true;
+    }
+    if (chunk.type === "tool-call-delta" || chunk.type === "usage" || chunk.type === "finish") return true;
     const index = Number.isInteger(Number(chunk.index)) ? Number(chunk.index) : 0;
     const startsText = chunk.type === "block-start" && (chunk.blockType === "text" || chunk.block?.type === "text");
     const endsText = chunk.type === "block-end" && chunk.block?.type === "text";
@@ -1495,6 +1507,7 @@ function updateLiveResponse(event, sessionId = state.sessionId, target = state) 
         receivedText: "",
         textBlocks: [],
         reasoning: false,
+        reasoningText: "",
         finalEvent: null,
       };
     }
@@ -1639,16 +1652,19 @@ function foldHistory(events) {
       const message = data.message || data;
       const text = textFromContent(message.content);
       const hasReasoning = Array.isArray(message.content) && message.content.some(part => part && part.type === "reasoning");
+      // Surface the model's raw reasoning in a collapsed block so users can
+      // inspect it on demand; it stays hidden by default to keep the view calm.
+      const reasoningText = Array.isArray(message.content)
+        ? message.content.filter(part => part && part.type === "reasoning").map(part => part.text || "").filter(Boolean).join("\n")
+        : "";
       const usage = message.usage || data.usage || null;
       const timing = message.timing || data.timing || null;
       // Real, engine-provided step timing when present; otherwise keep the
-      // summary minimal instead of inventing a fake thought chain. The raw
-      // reasoning is model-internal (often English rambling) — never surface
-      // it verbatim; a terse Chinese summary reads clean.
+      // summary minimal instead of inventing a fake thought chain.
       const thought = timing?.stepStartTime && timing?.completedTime
         ? `模型生成 ${formatDuration(Math.max(0, timing.completedTime - timing.stepStartTime))}`
         : (turnToolCount ? `已完成 ${turnToolCount} 个工具步骤` : "已完成回答");
-      if (text) output.push({ role: "assistant", text, thought, hasReasoning, usage, timing, id: message.id || event.id });
+      if (text) output.push({ role: "assistant", text, thought, hasReasoning, reasoningText, usage, timing, id: message.id || event.id });
     } else if (type === "tool/call") {
       const view = event.view || data.view || {};
       const title = view.title || data.name || data.toolName || "工具调用";
@@ -1757,7 +1773,7 @@ function renderHistory(events, { force = false } = {}) {
     const bodyHtml = item.streaming
       ? `${escapeHtml(item.text)}<span class="stream-cursor" aria-hidden="true"></span>`
       : `${markdown(item.text)}${item.streaming ? '<span class="stream-cursor" aria-hidden="true"></span>' : ""}`;
-    return `<article class="message ${item.role}${item.pending ? " pending" : ""}${item.waiting ? " waiting" : ""}${item.streaming ? " streaming" : ""}"><div class="message-label">${item.role === "user" ? `YOU / 你${item.delivery ? ` · ${item.delivery === "steer" ? "引导当前任务" : "排到下一条"}` : ""}${item.pending ? " · 发送中" : item.phase === "steering" ? " · 已送入下一步，等待当前步骤结束" : item.phase === "queued" ? " · 已排队" : item.accepted ? " · 已进入当前执行" : ""}` : `BOUJOY AGENT${item.streaming ? " · 正在生成" : ""}`}${stamp ? `<span class="message-stamp">${stamp}</span>` : ""}</div>${item.role === "assistant" && item.thought ? `<div class="thought-summary"><b>${item.hasReasoning ? "推理摘要" : "执行摘要"}</b><span>${escapeHtml(item.thought)}</span></div>` : ""}<div class="message-body">${bodyHtml}</div>${stats}<div class="message-actions"><button type="button" class="message-copy" data-copy-text="${escapeHtml(item.text)}" title="复制这条消息">⧉ 复制</button></div></article>`;
+    return `<article class="message ${item.role}${item.pending ? " pending" : ""}${item.waiting ? " waiting" : ""}${item.streaming ? " streaming" : ""}"><div class="message-label">${item.role === "user" ? `YOU / 你${item.delivery ? ` · ${item.delivery === "steer" ? "引导当前任务" : "排到下一条"}` : ""}${item.pending ? " · 发送中" : item.phase === "steering" ? " · 已送入下一步，等待当前步骤结束" : item.phase === "queued" ? " · 已排队" : item.accepted ? " · 已进入当前执行" : ""}` : `XU4N AGENT${item.streaming ? " · 正在生成" : ""}`}${stamp ? `<span class="message-stamp">${stamp}</span>` : ""}</div>${item.role === "assistant" && item.thought ? `<div class="thought-summary"><b>${item.hasReasoning ? "推理摘要" : "执行摘要"}</b><span>${escapeHtml(item.thought)}</span></div>` : ""}${item.role === "assistant" && item.reasoningText ? `<details class="thinking-block"><summary>💭 思考过程</summary><div class="thinking-content">${escapeHtml(item.reasoningText)}</div></details>` : ""}<div class="message-body">${bodyHtml}</div>${stats}<div class="message-actions"><button type="button" class="message-copy" data-copy-text="${escapeHtml(item.text)}" title="复制这条消息">⧉ 复制</button></div></article>`;
   }).join("");
   // The user card intentionally has a cut-paper bottom edge. Its original
   // percentage-height diagonal looks identical for normal prompts, but can
@@ -1808,11 +1824,24 @@ function renderLiveDelta() {
   let liveEl = stream.querySelector(".message.streaming");
   const thoughtHtml = live.reasoning ? `<div class="thought-summary"><b>推理摘要</b><span>正在推理并组织回答</span></div>` : "";
   if (!liveEl) {
-    stream.insertAdjacentHTML("beforeend", `<article class="message assistant streaming"><div class="message-label">BOUJOY AGENT · 正在生成</div>${thoughtHtml}<div class="message-body streaming-text"></div></article>`);
+    stream.insertAdjacentHTML("beforeend", `<article class="message assistant streaming"><div class="message-label">XU4N AGENT · 正在生成</div>${thoughtHtml}<div class="message-body streaming-text"></div></article>`);
     liveEl = stream.querySelector(".message.streaming");
   } else if (live.reasoning) {
     const summary = liveEl.querySelector(".thought-summary");
     if (!summary) liveEl.insertAdjacentHTML("afterbegin", thoughtHtml);
+  }
+  // Lazily create/append the live "thinking" buffer as reasoning deltas arrive.
+  if (live.reasoningText) {
+    let thinkingEl = liveEl.querySelector(".thinking-content");
+    if (!thinkingEl) {
+      liveEl.querySelector(".message-body").insertAdjacentHTML("beforebegin", `<details class="thinking-block" open><summary>💭 思考过程</summary><div class="thinking-content"></div></details>`);
+      thinkingEl = liveEl.querySelector(".thinking-content");
+    }
+    if (live.renderedReasoningLength === undefined) live.renderedReasoningLength = 0;
+    if (live.reasoningText.length > live.renderedReasoningLength) {
+      thinkingEl.appendChild(document.createTextNode(live.reasoningText.slice(live.renderedReasoningLength)));
+      live.renderedReasoningLength = live.reasoningText.length;
+    }
   }
   const body = liveEl.querySelector(".message-body");
   // True incremental append: track how much we already rendered and only
@@ -2599,7 +2628,7 @@ async function captureCurrentConversation() {
       .join("\n\n");
     if (!transcript.trim()) { toast("当前会话还没有可沉淀的内容", true); return; }
     const directive = [
-      "你是 Boujoy 知识库的自动捕获器。按 00-System/Value-Filter.md 打分（0-3 不存、4-5 进 Memory-Queue、6-8 存知识卡、9-10 存卡并考虑更新 Hot-Index），按 Security-Rules 脱敏，按 Dedup-Rules 去重。",
+      "你是 XU4N 知识库的自动捕获器。按 00-System/Value-Filter.md 打分（0-3 不存、4-5 进 Memory-Queue、6-8 存知识卡、9-10 存卡并考虑更新 Hot-Index），按 Security-Rules 脱敏，按 Dedup-Rules 去重。",
       "写入前必须先查重：用 read 工具读 00-System/Memory-Index.md 和 00-System/Hot-Index.md，同主题绝不新建，只把新判断追加到原卡'更新记录'；再检查目标目录已有文件。",
       "值得保存（6+）时按 Knowledge-Card-Template 压缩成 300-800 字知识卡，用 POST /api/knowledge/capture（body: {path, text}）写入 02-06 对应目录。若接口返回 403'检测到高度相似的知识卡'，说明已重复：改为读取返回的相似卡路径并追加更新记录（用 capture 写回原路径，text 为原卡全文+新更新记录）。",
       "4-5 分追加到 00-System/Memory-Queue.md；0-3 分不保存。完成后一句话回报：保存路径、分数或未保存原因（不展示评分明细）。",
@@ -2754,7 +2783,7 @@ async function loadSettings(tab = "general") {
       const providerList = unpackList(providers, ["providers", "items"]);
       const modelList = (models.groups || []).flatMap(group => (group.models || []).map(item => ({ ...item, providerName: group.name })));
       const credential = credentials.credentials?.DEEPSEEK_API_KEY;
-      content.innerHTML = `<div class="setting-card"><strong>供应商</strong><small>${escapeHtml(providerList.filter(item => item.active).map(item => item.displayName || item.provider).join(" · ") || "使用 Harness 默认供应商")}</small><div class="setting-actions"><button data-discover-models>重新发现模型</button></div></div>${modelList.slice(0,30).map(item => `<div class="setting-card"><strong>${escapeHtml(item.name || item.id)}</strong><small>${escapeHtml(item.providerName || "")}${item.reasoning?.efforts?.length ? ` · 推理 ${item.reasoning.efforts.map(e => e.name).join("/")}` : ""}</small></div>`).join("")}<div class="setting-card"><strong>DeepSeek API 凭证</strong><small>${credential?.configured ? `已配置 · ${escapeHtml(credential.source || "本地凭证库")}` : "未配置"}。Boujoy 绝不回显现有密钥。</small><div class="credential-row"><input id="credentialInput" type="password" autocomplete="off" placeholder="输入新 Key（不会写入 Vault）"><button data-credential-set>保存</button><button data-credential-unset>清除</button></div></div>`;
+      content.innerHTML = `<div class="setting-card"><strong>供应商</strong><small>${escapeHtml(providerList.filter(item => item.active).map(item => item.displayName || item.provider).join(" · ") || "使用 Harness 默认供应商")}</small><div class="setting-actions"><button data-discover-models>重新发现模型</button></div></div>${modelList.slice(0,30).map(item => `<div class="setting-card"><strong>${escapeHtml(item.name || item.id)}</strong><small>${escapeHtml(item.providerName || "")}${item.reasoning?.efforts?.length ? ` · 推理 ${item.reasoning.efforts.map(e => e.name).join("/")}` : ""}</small></div>`).join("")}<div class="setting-card"><strong>DeepSeek API 凭证</strong><small>${credential?.configured ? `已配置 · ${escapeHtml(credential.source || "本地凭证库")}` : "未配置"}。XU4N 绝不回显现有密钥。</small><div class="credential-row"><input id="credentialInput" type="password" autocomplete="off" placeholder="输入新 Key（不会写入 Vault）"><button data-credential-set>保存</button><button data-credential-unset>清除</button></div></div>`;
     } else if (tab === "presets") {
       const value = await rpc("agentPreset.list", {});
       const items = unpackList(value, ["presets", "items"]);
@@ -2826,7 +2855,7 @@ const COMMANDS = [
   { name: "选择新项目", hint: "⌘ O", run: pickProject },
   { name: "切换明暗主题", hint: "", run: () => setTheme(state.theme === "dark" ? "light" : "dark") },
   { name: "切换知识 / 纯净模式", hint: "", run: () => setMode(state.mode === "knowledge" ? "clean" : "knowledge") },
-  { name: "重启 Boujoy Harness", hint: "安全重启", run: restartBoujoy },
+  { name: "重启 XU4N Harness", hint: "安全重启", run: restartBoujoy },
 ];
 
 function renderCommands(query = "") {
@@ -2965,7 +2994,7 @@ function bindEvents() {
       urlEl.textContent = info.url || "http://<Mac 局域网IP>:8766";
       codeEl.textContent = info.accessCode || "—";
     } catch (error) {
-      errEl.textContent = "读取失败：" + error.message + "（可查看 Mac 桌面 Boujoy-访问码.txt）";
+      errEl.textContent = "读取失败：" + error.message + "（可查看 Mac 桌面 XU4N-访问码.txt）";
     }
     dialog.showModal();
   };

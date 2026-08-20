@@ -68,7 +68,7 @@ final class ServiceManager {
             try process.run()
             children.append(process)
         } catch {
-            logger.error("Boujoy service launch failed: \(error.localizedDescription, privacy: .public)")
+            logger.error("XU4N service launch failed: \(error.localizedDescription, privacy: .public)")
         }
     }
 
@@ -150,15 +150,15 @@ final class ServiceManager {
     /// Surface the access code to the user: a desktop hint file plus an alert
     /// on first launch, so the phone can be paired without hunting logs.
     private func writeAccessCodeHint(_ code: String) {
-        let hint = URL(fileURLWithPath: NSHomeDirectory()).appendingPathComponent("Desktop/Boujoy-访问码.txt")
-        let text = "手机访问 Boujoy：\n\n同一 Wi-Fi 下，手机浏览器打开\nhttp://<这台 Mac 的局域网 IP>:8766\n\n访问码：\(code)\n\n（首次输入后手机会记住，重启 Mac 也有效）\n"
+        let hint = URL(fileURLWithPath: NSHomeDirectory()).appendingPathComponent("Desktop/XU4N-访问码.txt")
+        let text = "手机访问 XU4N：\n\n同一 Wi-Fi 下，手机浏览器打开\nhttp://<这台 Mac 的局域网 IP>:8766\n\n访问码：\(code)\n\n（首次输入后手机会记住，重启 Mac 也有效）\n"
         try? text.write(to: hint, atomically: true, encoding: .utf8)
         if !UserDefaults.standard.bool(forKey: "BoujoyAccessCodeShown") {
             UserDefaults.standard.set(true, forKey: "BoujoyAccessCodeShown")
             DispatchQueue.main.async {
                 let alert = NSAlert()
                 alert.messageText = "手机访问已开启"
-                alert.informativeText = "访问码：\(code)\n\n同一 Wi-Fi 下用手机浏览器打开 http://<Mac 局域网IP>:8766 即可实时监控和操作。\n（访问码已保存到桌面 Boujoy-访问码.txt）"
+                alert.informativeText = "访问码：\(code)\n\n同一 Wi-Fi 下用手机浏览器打开 http://<Mac 局域网IP>:8766 即可实时监控和操作。\n（访问码已保存到桌面 XU4N-访问码.txt）"
                 alert.addButton(withTitle: "知道了")
                 alert.runModal()
             }
@@ -244,12 +244,13 @@ final class AppController: NSObject, NSApplicationDelegate {
     private let logger = Logger(subsystem: "com.boujoy.harness", category: "app")
 
     func applicationDidFinishLaunching(_ notification: Notification) {
+        buildMainMenu()
         installRestartSignal()
         cleanupPreviousRelaunchJob()
         do {
             paths = try loadConfig()
         } catch {
-            presentFatal("无法读取 Boujoy Harness 配置：\(error.localizedDescription)")
+            presentFatal("无法读取 XU4N Harness 配置：\(error.localizedDescription)")
             return
         }
         guard let resources = Bundle.main.resourceURL else {
@@ -273,6 +274,45 @@ final class AppController: NSObject, NSApplicationDelegate {
 
     func applicationShouldTerminateAfterLastWindowClosed(_ sender: NSApplication) -> Bool { true }
     func applicationWillTerminate(_ notification: Notification) { services?.stopOwnedProcesses() }
+
+    /// Build a standard main menu so Cmd+C/V/X/A/Z and friends work inside
+    /// the WKWebView. Without an Edit menu, macOS has no action to route
+    /// keyboard shortcuts through the responder chain.
+    private func buildMainMenu() {
+        let mainMenu = NSMenu()
+
+        // App menu
+        let appItem = NSMenuItem()
+        mainMenu.addItem(appItem)
+        let appMenu = NSMenu()
+        appMenu.addItem(NSMenuItem(title: "Quit XU4N Harness", action: #selector(NSApplication.terminate(_:)), keyEquivalent: "q"))
+        appItem.submenu = appMenu
+
+        // Edit menu — wires Cut/Copy/Paste/Select All shortcuts for WKWebView.
+        let editItem = NSMenuItem()
+        mainMenu.addItem(editItem)
+        let editMenu = NSMenu(title: "Edit")
+        editMenu.addItem(NSMenuItem(title: "Undo", action: Selector(("undo:")), keyEquivalent: "z"))
+        let redo = NSMenuItem(title: "Redo", action: Selector(("redo:")), keyEquivalent: "z")
+        redo.keyEquivalentModifierMask = [.command, .shift]
+        editMenu.addItem(redo)
+        editMenu.addItem(NSMenuItem.separator())
+        editMenu.addItem(NSMenuItem(title: "Cut", action: Selector(("cut:")), keyEquivalent: "x"))
+        editMenu.addItem(NSMenuItem(title: "Copy", action: Selector(("copy:")), keyEquivalent: "c"))
+        editMenu.addItem(NSMenuItem(title: "Paste", action: Selector(("paste:")), keyEquivalent: "v"))
+        editMenu.addItem(NSMenuItem(title: "Delete", action: Selector(("delete:")), keyEquivalent: ""))
+        editMenu.addItem(NSMenuItem(title: "Select All", action: Selector(("selectAll:")), keyEquivalent: "a"))
+        editItem.submenu = editMenu
+
+        // View menu — reload shortcut
+        let viewItem = NSMenuItem()
+        mainMenu.addItem(viewItem)
+        let viewMenu = NSMenu(title: "View")
+        viewMenu.addItem(NSMenuItem(title: "Reload", action: Selector(("reload:")), keyEquivalent: "r"))
+        viewItem.submenu = viewMenu
+
+        NSApp.mainMenu = mainMenu
+    }
 
     private func loadConfig() throws -> AppPaths {
         let fileManager = FileManager.default
@@ -336,12 +376,12 @@ final class AppController: NSObject, NSApplicationDelegate {
                 UserDefaults.standard.set(selected.path, forKey: "BoujoyHarnessPortableRoot")
                 return candidate
             }
-            throw configError("所选文件夹不是完整的 Boujoy Harness 包。需要同时包含 vault、runtime/DeepSeekHarness 和 Python 运行时。")
+            throw configError("所选文件夹不是完整的 XU4N Harness 包。需要同时包含 vault、runtime/DeepSeekHarness 和 Python 运行时。")
         }
 
         let guidance = appIsTranslocated
-            ? "macOS 正在隔离运行这个未签名 App。请从分享包双击「启动 Boujoy Harness.command」，或重新打开 App 并选择包含 vault 和 runtime 的文件夹。"
-            : "未找到完整运行组件。请确认 App、vault 和 runtime 保持在同一分享包内，或使用「启动 Boujoy Harness.command」打开。"
+            ? "macOS 正在隔离运行这个未签名 App。请从分享包双击「启动 XU4N Harness.command」，或重新打开 App 并选择包含 vault 和 runtime 的文件夹。"
+            : "未找到完整运行组件。请确认 App、vault 和 runtime 保持在同一分享包内，或使用「启动 XU4N Harness.command」打开。"
         throw configError(guidance)
     }
 
@@ -381,10 +421,10 @@ final class AppController: NSObject, NSApplicationDelegate {
 
     private func choosePortableRoot(translocated: Bool) -> URL? {
         let alert = NSAlert()
-        alert.messageText = translocated ? "请选择原始 Boujoy Harness 文件夹" : "请选择 Boujoy Harness 文件夹"
+        alert.messageText = translocated ? "请选择原始 XU4N Harness 文件夹" : "请选择 XU4N Harness 文件夹"
         alert.informativeText = translocated
             ? "macOS 正在隔离运行此 App，无法读取它旁边的运行组件。请选择解压后同时包含 vault 和 runtime 的文件夹；只需一次。"
-            : "请选择同时包含 vault 和 runtime 的 Boujoy Harness 文件夹。"
+            : "请选择同时包含 vault 和 runtime 的 XU4N Harness 文件夹。"
         alert.addButton(withTitle: "选择文件夹")
         alert.addButton(withTitle: "取消")
         guard alert.runModal() == .alertFirstButtonReturn else { return nil }
@@ -394,7 +434,7 @@ final class AppController: NSObject, NSApplicationDelegate {
         panel.canChooseDirectories = true
         panel.allowsMultipleSelection = false
         panel.prompt = "使用此文件夹"
-        panel.message = "选择包含 vault 和 runtime 的 Boujoy Harness 文件夹"
+        panel.message = "选择包含 vault 和 runtime 的 XU4N Harness 文件夹"
         return panel.runModal() == .OK ? panel.url?.standardizedFileURL : nil
     }
 
@@ -404,7 +444,7 @@ final class AppController: NSObject, NSApplicationDelegate {
 
     private func presentFatal(_ text: String) {
         let alert = NSAlert()
-        alert.messageText = "Boujoy Harness 启动失败"
+        alert.messageText = "XU4N Harness 启动失败"
         alert.informativeText = text
         alert.runModal()
         NSApp.terminate(nil)
@@ -416,13 +456,13 @@ final class AppController: NSObject, NSApplicationDelegate {
         let frame = NSRect(origin: .zero, size: size)
         window = NSWindow(
             contentRect: frame,
-            styleMask: [.titled, .closable, .miniaturizable, .resizable, .fullSizeContentView],
+            styleMask: [.titled, .closable, .miniaturizable, .resizable],
             backing: .buffered,
             defer: false
         )
-        window.title = "Boujoy Harness"
-        window.titlebarAppearsTransparent = true
-        window.titleVisibility = .hidden
+        window.title = "XU4N Harness"
+        window.titlebarAppearsTransparent = false
+        window.titleVisibility = .visible
         window.minSize = NSSize(width: 900, height: 650)
         window.backgroundColor = NSColor(calibratedWhite: 0.025, alpha: 1)
         window.center()
@@ -448,17 +488,17 @@ final class AppController: NSObject, NSApplicationDelegate {
         waitingForSplashNavigation = true
         let splash = """
         <!doctype html><html><head><meta charset="utf-8"><style>
-          html,body{height:100%;margin:0;background:#080a0d;color:#f5efdf;font-family:-apple-system,"PingFang SC",sans-serif;display:flex;align-items:center;justify-content:center;overflow:hidden}
+          html,body{height:100%;margin:0;background:linear-gradient(165deg,#f8f2e6,#f2ecdf 55%,#eee6d6);color:#38332b;font-family:-apple-system,"PingFang SC",sans-serif;display:flex;align-items:center;justify-content:center;overflow:hidden}
           .wrap{text-align:center;animation:fadein .5s ease}
-          .mark{display:grid;place-items:center;width:88px;height:88px;margin:0 auto 26px;color:#c8f000;background:#050607;border:5px solid #c8f000;box-shadow:9px 9px 0 #213cff;font:800 52px/1 -apple-system;transform:rotate(-3deg)}
-          h1{margin:0;font-size:22px;letter-spacing:2px;font-weight:800}
-          p{margin:10px 0 0;color:#8a90a8;font-size:12px;letter-spacing:1px}
-          .bar{width:180px;height:5px;margin:26px auto 0;background:#1a1f2e;overflow:hidden;border-radius:3px}
-          .bar::after{content:"";display:block;width:60px;height:100%;background:#ff2b8b;animation:load 1.1s ease-in-out infinite}
+          .mark{display:grid;place-items:center;width:88px;height:88px;margin:0 auto 26px;color:#fffdf9;background:#4a6b9f;border-radius:20px;box-shadow:0 2px 4px rgba(74,62,44,.08),0 14px 38px rgba(74,62,44,.16);font:700 46px/1 -apple-system}
+          h1{margin:0;font-size:22px;letter-spacing:2px;font-weight:700}
+          p{margin:10px 0 0;color:#877f70;font-size:12px;letter-spacing:1px}
+          .bar{width:180px;height:5px;margin:26px auto 0;background:rgba(58,50,38,.12);overflow:hidden;border-radius:999px}
+          .bar::after{content:"";display:block;width:60px;height:100%;background:#4a6b9f;border-radius:999px;animation:load 1.2s ease-in-out infinite}
           @keyframes load{0%{transform:translateX(-70px)}100%{transform:translateX(190px)}}
           @keyframes fadein{from{opacity:0}to{opacity:1}}
         </style></head><body>
-        <div class="wrap"><div class="mark">B</div><h1>BOUJOY HARNESS</h1><p>正在启动本地引擎…</p><div class="bar"></div></div>
+        <div class="wrap"><div class="mark">X</div><h1>XU4N HARNESS</h1><p>正在启动本地引擎…</p><div class="bar"></div></div>
         </body></html>
         """
         webView.loadHTMLString(splash, baseURL: nil)
@@ -580,7 +620,7 @@ final class AppController: NSObject, NSApplicationDelegate {
             NSApp.terminate(nil)
         } catch {
             relaunching = false
-            presentFatal("无法重启 Boujoy Harness：\(error.localizedDescription)")
+            presentFatal("无法重启 XU4N Harness：\(error.localizedDescription)")
         }
     }
 

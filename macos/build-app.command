@@ -4,12 +4,14 @@ set -euo pipefail
 SCRIPT_DIR="${0:A:h}"
 PROJECT_DIR="${SCRIPT_DIR:h}"
 PACKAGE_ROOT="${PROJECT_DIR:h:h}"
-APP_DIR="${PROJECT_DIR}/dist/Boujoy Harness.app"
-DESKTOP_APP="${HOME}/Desktop/Boujoy Harness.app"
+BUILD_DIR="$(/usr/bin/mktemp -d /tmp/boujoy-harness-build.XXXXXX)"
+# Build the .app outside the iCloud-synced Documents folder so File
+# Provider cannot attach fpfs/FinderInfo xattrs that break codesign.
+APP_DIR="${BUILD_DIR}/XU4N Harness.app"
+DESKTOP_APP="${HOME}/Desktop/XU4N Harness.app"
 CONTENTS="${APP_DIR}/Contents"
 RESOURCES="${CONTENTS}/Resources"
 MACOS="${CONTENTS}/MacOS"
-BUILD_DIR="$(/usr/bin/mktemp -d /tmp/boujoy-harness-build.XXXXXX)"
 SDK_PATH="$(/usr/bin/xcrun --show-sdk-path)"
 trap '/bin/rm -rf -- "${BUILD_DIR}"' EXIT
 
@@ -64,7 +66,7 @@ if [[ -n "${PORTABLE_ROOT}" ]]; then
     exit 1
   }
   DSH_ROOT="${PORTABLE_ROOT}/runtime/DeepSeekHarness"
-  DESKTOP_APP="${PORTABLE_ROOT}/Boujoy Harness.app"
+  DESKTOP_APP="${PORTABLE_ROOT}/XU4N Harness.app"
   CONFIG_VAULT="vault"
   CONFIG_DSH_ROOT="runtime/DeepSeekHarness"
   CONFIG_KNOWLEDGE_HOME="runtime/DeepSeekHarness/home"
@@ -75,8 +77,8 @@ if [[ -n "${PORTABLE_ROOT}" ]]; then
     CONFIG_PYTHON="python3"
   fi
   "${SCRIPT_DIR}/make-runtime-portable.command" "${PORTABLE_ROOT}"
-  /bin/cp "${SCRIPT_DIR}/open-portable.command" "${PORTABLE_ROOT}/启动 Boujoy Harness.command"
-  /bin/chmod 755 "${PORTABLE_ROOT}/启动 Boujoy Harness.command"
+  /bin/cp "${SCRIPT_DIR}/open-portable.command" "${PORTABLE_ROOT}/启动 XU4N Harness.command"
+  /bin/chmod 755 "${PORTABLE_ROOT}/启动 XU4N Harness.command"
   /bin/cp "${SCRIPT_DIR}/PORTABLE-README.zh-CN.md" "${PORTABLE_ROOT}/README.md"
   /bin/cp "${SCRIPT_DIR}/PORTABLE-README.zh-CN.md" "${PORTABLE_ROOT}/使用说明书.md"
   /bin/cp "${SCRIPT_DIR}/PORTABLE-RELEASE-STATUS.md" "${PORTABLE_ROOT}/RELEASE-STATUS.md"
@@ -93,12 +95,12 @@ CLANG_MODULE_CACHE_PATH="${BUILD_DIR}/clang-cache" SWIFT_MODULE_CACHE_PATH="${BU
   /usr/bin/swiftc -O -sdk "${SDK_PATH}" -target arm64-apple-macosx13.0 \
   -framework AppKit -framework WebKit -framework Foundation -framework UniformTypeIdentifiers \
   "${SCRIPT_DIR}/BoujoyHarness.swift" -o "${MACOS}/BoujoyHarness"
-/bin/cp "${SCRIPT_DIR}/Info.plist" "${CONTENTS}/Info.plist"
-/bin/cp "${PROJECT_DIR}/web/index.html" "${PROJECT_DIR}/web/app.css" "${PROJECT_DIR}/web/app.js" "${PROJECT_DIR}/web/boujoy_server.py" "${RESOURCES}/"
-/bin/cp "${PROJECT_DIR}/web/manifest.json" "${PROJECT_DIR}/web/icon-192.png" "${PROJECT_DIR}/web/icon-512.png" "${RESOURCES}/"
-/bin/cp "${PROJECT_DIR}/assets/punk-collage-bg.png" "${PROJECT_DIR}/assets/punk-collage-dark.png" "${PROJECT_DIR}/assets/fusion-pixel-10px-proportional-zh_hans.otf.woff2" "${RESOURCES}/"
+/bin/cp -X "${SCRIPT_DIR}/Info.plist" "${CONTENTS}/Info.plist"
+/bin/cp -X "${PROJECT_DIR}/web/index.html" "${PROJECT_DIR}/web/app.css" "${PROJECT_DIR}/web/app.js" "${PROJECT_DIR}/web/boujoy_server.py" "${RESOURCES}/"
+/bin/cp -X "${PROJECT_DIR}/web/manifest.json" "${PROJECT_DIR}/web/icon-192.png" "${PROJECT_DIR}/web/icon-512.png" "${RESOURCES}/"
+/bin/cp -X "${PROJECT_DIR}/assets/punk-collage-bg.png" "${PROJECT_DIR}/assets/punk-collage-dark.png" "${PROJECT_DIR}/assets/fusion-pixel-10px-proportional-zh_hans.otf.woff2" "${RESOURCES}/"
 
-/bin/cp "${PROJECT_DIR}/assets/BoujoyHarness.icns" "${RESOURCES}/BoujoyHarness.icns"
+/bin/cp -X "${PROJECT_DIR}/assets/BoujoyHarness.icns" "${RESOURCES}/BoujoyHarness.icns"
 
 /usr/bin/plutil -create xml1 "${BUILD_DIR}/boujoy-config.plist"
 /usr/bin/plutil -insert vault -string "${CONFIG_VAULT}" "${BUILD_DIR}/boujoy-config.plist"
@@ -107,6 +109,9 @@ CLANG_MODULE_CACHE_PATH="${BUILD_DIR}/clang-cache" SWIFT_MODULE_CACHE_PATH="${BU
 /usr/bin/plutil -insert cleanHome -string "${CONFIG_CLEAN_HOME}" "${BUILD_DIR}/boujoy-config.plist"
 /usr/bin/plutil -insert python -string "${CONFIG_PYTHON}" "${BUILD_DIR}/boujoy-config.plist"
 /usr/bin/plutil -convert json -o "${RESOURCES}/boujoy-config.json" "${BUILD_DIR}/boujoy-config.plist"
+# Strip any Finder/extended attributes that cp may have dragged in from source
+# files, otherwise codesign rejects the bundle with "detritus not allowed".
+/usr/bin/xattr -cr "${APP_DIR}"
 /usr/bin/codesign --force --deep --sign - "${APP_DIR}"
 /usr/bin/codesign --verify --deep --strict --verbose=2 "${APP_DIR}"
 echo "已构建：${APP_DIR}"
@@ -114,21 +119,21 @@ echo "已构建：${APP_DIR}"
 if ${INSTALL_APP}; then
   INSTALL_DIR="$(/usr/bin/mktemp -d /tmp/boujoy-harness-install.XXXXXX)"
   BACKUP_DIR="$(/usr/bin/mktemp -d /tmp/boujoy-harness-backup.XXXXXX)"
-  STAGED_APP="${INSTALL_DIR}/Boujoy Harness.app"
+  STAGED_APP="${INSTALL_DIR}/XU4N Harness.app"
   /usr/bin/ditto "${APP_DIR}" "${STAGED_APP}"
   /usr/bin/codesign --verify --deep --strict --verbose=2 "${STAGED_APP}"
 
   if [[ -d "${DESKTOP_APP}" ]]; then
-    /bin/mv "${DESKTOP_APP}" "${BACKUP_DIR}/Boujoy Harness.app"
+    /bin/mv "${DESKTOP_APP}" "${BACKUP_DIR}/XU4N Harness.app"
   fi
   if ! /bin/mv "${STAGED_APP}" "${DESKTOP_APP}"; then
-    [[ -d "${BACKUP_DIR}/Boujoy Harness.app" ]] && /bin/mv "${BACKUP_DIR}/Boujoy Harness.app" "${DESKTOP_APP}"
+    [[ -d "${BACKUP_DIR}/XU4N Harness.app" ]] && /bin/mv "${BACKUP_DIR}/XU4N Harness.app" "${DESKTOP_APP}"
     echo "桌面 App 安装失败，已恢复旧版本。" >&2
     exit 1
   fi
   if ! /usr/bin/codesign --verify --deep --strict --verbose=2 "${DESKTOP_APP}"; then
     /bin/rm -rf -- "${DESKTOP_APP}"
-    [[ -d "${BACKUP_DIR}/Boujoy Harness.app" ]] && /bin/mv "${BACKUP_DIR}/Boujoy Harness.app" "${DESKTOP_APP}"
+    [[ -d "${BACKUP_DIR}/XU4N Harness.app" ]] && /bin/mv "${BACKUP_DIR}/XU4N Harness.app" "${DESKTOP_APP}"
     echo "桌面 App 签名校验失败，已恢复旧版本。" >&2
     exit 1
   fi
