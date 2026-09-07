@@ -27,3 +27,6 @@ coverage/
 .DS_Store
 __MACOSX/
 *.log
+
+# Local dev scratch (see .claude/launch.json).
+/.dev-vault/

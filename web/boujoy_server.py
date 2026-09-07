@@ -38,6 +38,13 @@ from html.parser import HTMLParser
 from pathlib import Path
 from typing import Any
 
+# Running as a script puts this file's directory on sys.path automatically,
+# but tests load this module via importlib.util.spec_from_file_location,
+# which does not. Insert it explicitly so the vendored bok_core/ package
+# (a sibling of this file) resolves either way.
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+from bok_core.ui_bridge import BokUIBridge
+
 
 LOOPBACK = "127.0.0.1"
 KB_ORIGIN = "http://127.0.0.1:8765"
@@ -527,6 +534,29 @@ class BoujoyHandler(BaseHTTPRequestHandler):
     @property
     def config(self) -> AppConfig:
         return self.server.config  # type: ignore[attr-defined]
+
+    @property
+    def bok_bridge(self) -> BokUIBridge:
+        return self.server.bok_bridge  # type: ignore[attr-defined]
+
+    def _handle_bok(self, method: str, parsed: urllib.parse.SplitResult, body: bytes) -> None:
+        target = parsed.path if not parsed.query else f"{parsed.path}?{parsed.query}"
+        # self.headers is an email.message.Message: lookups are case-insensitive
+        # regardless of how the client sent them. Round-tripping through a plain
+        # dict(self.headers) loses that and breaks ui_bridge's exact-case get().
+        forward_headers: dict[str, str] = {}
+        content_type = self.headers.get("Content-Type")
+        if content_type:
+            forward_headers["Content-Type"] = content_type
+        idempotency_key = self.headers.get("Idempotency-Key")
+        if idempotency_key:
+            forward_headers["Idempotency-Key"] = idempotency_key
+        response = self.bok_bridge.forward(method, target, body=body, headers=forward_headers)
+        self._headers(response.status, response.content_type, len(response.body))
+        try:
+            self.wfile.write(response.body)
+        except (BrokenPipeError, ConnectionResetError):
+            return
 
     def log_message(self, fmt: str, *args: Any) -> None:
         if os.environ.get("BOUJOY_DEBUG") == "1":
@@ -1420,6 +1450,9 @@ class BoujoyHandler(BaseHTTPRequestHandler):
                 return
             self._proxy(f"{HARNESS_ORIGINS[mode]}/api/{endpoint}", stream=True)
             return
+        if path.startswith("/api/bok"):
+            self._handle_bok("GET", parsed, b"")
+            return
         self._serve_static(path)
 
     def _ws_upgrade(self, mode: str, path: str) -> None:
@@ -1610,6 +1643,9 @@ class BoujoyHandler(BaseHTTPRequestHandler):
             except (ValueError, json.JSONDecodeError, OSError) as exc:
                 self._error(400, str(exc))
             return
+        if path.startswith("/api/bok"):
+            self._handle_bok("POST", parsed, body)
+            return
         self._error(404, "not found")
 
 
@@ -1642,6 +1678,15 @@ class BoujoyServer(ThreadingHTTPServer):
         self.vault_cache: dict[tuple[tuple[int, int, str, str], ...], list[dict[str, Any]]] = {}
         self.access_attempt_lock = threading.Lock()
         self.access_attempts: dict[str, list[float]] = {}
+        # Personal Core must live outside the vault and outside any git repo
+        # (bok_core's own rule, config.py) — a dedicated per-user folder, not
+        # the portable product's vault or install tree.
+        personal_core_root = Path.home() / ".bok-personal-core"
+        personal_core_root.mkdir(parents=True, exist_ok=True)
+        self.bok_bridge = BokUIBridge(
+            vault_root=config.vault,
+            config_overrides={"personal_core_root": str(personal_core_root)},
+        )
 
 
 def main() -> int:
@@ -1685,6 +1730,7 @@ def main() -> int:
     except KeyboardInterrupt:
         pass
     finally:
+        server.bok_bridge.close()
         server.server_close()
     return 0
 

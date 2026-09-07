@@ -62,6 +62,11 @@ const state = {
   subagents: [],
   sessionSearchResults: null,
   sessionSearchToken: 0,
+  bokLoading: false,
+  bokTab: "workbench",
+  bokInbox: [],
+  bokQuickNotes: [],
+  bokPerson: null,
 };
 
 const PAGE_META = {
@@ -71,6 +76,7 @@ const PAGE_META = {
   styles: ["VOICE / 04", "风格 输出声线"],
   monitor: ["GAUGE / 05", "运行监控"],
   news: ["FEED / 06", "AI 新闻与工具"],
+  bok: ["MEMORY / 07", "Bok 记忆工作台"],
 };
 
 const KIND_META = {
@@ -802,6 +808,7 @@ function showPage(page) {
   if (page === "styles") loadRecords("style");
   if (page === "monitor") renderMonitor();
   if (page === "news") loadNews();
+  if (page === "bok") loadBok();
 }
 
 async function setMode(mode) {
@@ -2834,6 +2841,136 @@ function renderCommands(query = "") {
   $("#commandList").innerHTML = items.map((item, index) => `<button type="button" class="command-item" data-command-index="${COMMANDS.indexOf(item)}"><span>${escapeHtml(item.name)}</span><small>${escapeHtml(item.hint)}</small></button>`).join("");
 }
 
+// ---------------------------------------------------------------------------
+// Bok — local memory workbench (vendored bok_core, bridged at /api/bok/v1/*)
+// ---------------------------------------------------------------------------
+
+const PERSON_TYPE_LABELS = {
+  identity: "身份", work_preference: "工作偏好", decision_pattern: "决策模式",
+  project_experience: "项目经历", skill: "技能", relationship: "关系",
+  goal: "目标", constraint: "限制",
+};
+
+async function bokFetch(path, { method = "GET", body = null, idempotency = "" } = {}) {
+  const headers = new Headers({ Accept: "application/json" });
+  if (body !== null) headers.set("Content-Type", "application/json");
+  if (idempotency) headers.set("Idempotency-Key", idempotency);
+  const stored = localStorage.getItem("boujoy-access-code") || "";
+  if (stored) headers.set("X-Boujoy-Access", stored);
+  const response = await fetch(`${API_ORIGIN}/api/bok/v1/${path}`, {
+    method,
+    headers,
+    cache: "no-store",
+    body: body === null ? undefined : JSON.stringify(body),
+  });
+  const payload = await response.json().catch(() => ({}));
+  if (!response.ok) throw new Error(payload.error?.message || payload.error || `Bok 请求失败（${response.status}）`);
+  return payload;
+}
+
+function setBokTab(tab) {
+  state.bokTab = tab;
+  $$("[data-bok-tab]").forEach(button => button.classList.toggle("active", button.dataset.bokTab === tab));
+  $$("[data-bok-panel]").forEach(panel => panel.classList.toggle("active", panel.dataset.bokPanel === tab));
+}
+
+async function loadBok() {
+  if (!state.bokLoading) {
+    state.bokLoading = true;
+    try {
+      const [inbox, notes] = await Promise.all([
+        bokFetch("memory/inbox?status=pending&limit=100"),
+        bokFetch("quick-notes?limit=50"),
+      ]);
+      state.bokInbox = inbox.items || [];
+      state.bokQuickNotes = notes.items || [];
+      renderBokWorkbench();
+    } catch (error) {
+      $("#bokInboxList").innerHTML = `<div class="empty-records"><strong>Bok 服务未就绪</strong><p>${escapeHtml(error.message)}</p></div>`;
+      toast(error.message, true);
+    } finally {
+      state.bokLoading = false;
+    }
+  }
+  try {
+    state.bokPerson = await bokFetch("person/dashboard?limit=200");
+    renderBokPerson();
+  } catch (error) {
+    $("#bokPersonList").innerHTML = `<div class="empty-records"><strong>Personal Core 未就绪</strong><p>${escapeHtml(error.message)}</p></div>`;
+  }
+}
+
+function renderBokWorkbench() {
+  const pending = state.bokInbox || [];
+  $("#bokInboxCount").textContent = `${pending.length} 条`;
+  $("#bokInboxList").innerHTML = pending.map(item => {
+    const analysis = item.analysis || {};
+    const reasons = (item.review_reasons || []).join(" · ");
+    return `<article class="bok-card"><div class="bok-card-meta"><span>${escapeHtml(analysis.memory_type || "memory")}</span><span>${item.requires_review ? "受保护候选" : "后台候选"}</span></div><h4>${escapeHtml(analysis.summary || analysis.title || "未命名记忆")}</h4><p>${escapeHtml(analysis.reason || "Bok 根据新内容形成了这条候选。")}</p>${reasons ? `<p class="bok-card-reasons">${escapeHtml(reasons)}</p>` : ""}<div class="bok-card-actions"><button class="mini-cut" data-bok-action="commit:${escapeHtml(item.id)}">采用</button><button class="mini-cut" data-bok-action="reject:${escapeHtml(item.id)}">忽略</button></div></article>`;
+  }).join("") || `<div class="empty-records"><strong>记忆收件箱是空的</strong><p>普通内容会安静保存；重要或冲突内容才会出现在这里。</p></div>`;
+
+  const notes = state.bokQuickNotes || [];
+  $("#bokQuickNoteList").innerHTML = notes.map(item => `<article class="bok-note-card"><span class="bok-card-meta">${escapeHtml(item.status === "promoted" ? "已整理" : item.status === "archived" ? "已归档" : "待整理")}</span><p>${escapeHtml(item.preview || "空白随手记")}</p>${item.status === "inbox" ? `<div class="bok-card-actions"><button class="mini-cut" data-bok-action="promote-note:${escapeHtml(item.path)}">整理为记忆</button><button class="mini-cut" data-bok-action="archive-note:${escapeHtml(item.path)}" data-bok-hash="${escapeHtml(item.content_hash || "")}">归档</button></div>` : ""}</article>`).join("") || `<div class="empty-records"><strong>还没有随手记</strong><p>在上面写一句，随时保存。</p></div>`;
+}
+
+function renderBokPerson() {
+  const data = state.bokPerson;
+  if (!data?.configured) {
+    $("#bokPersonList").innerHTML = `<div class="empty-records"><strong>Personal Core 尚未启用</strong><p>${escapeHtml(data?.message || "它会保存在知识库和 Git 仓库之外的独立位置。")}</p></div>`;
+    return;
+  }
+  const understanding = data.claims?.understanding || data.claims?.confirmed || [];
+  const reviewRequired = data.claims?.review_required || data.claims?.pending || [];
+  const card = (claim, review) => `<article class="bok-card"><div class="bok-card-meta"><span>${escapeHtml(PERSON_TYPE_LABELS[claim.claim_type] || claim.claim_type || "")}</span><span>${escapeHtml(claim.epistemic_status || "")}</span></div><h4>${escapeHtml(claim.statement || "")}</h4>${review ? `<div class="bok-card-actions"><button class="mini-cut" data-bok-action="confirm-claim:${escapeHtml(claim.id)}">确认</button><button class="mini-cut" data-bok-action="reject-claim:${escapeHtml(claim.id)}">拒绝</button></div>` : ""}</article>`;
+  const sections = [];
+  if (reviewRequired.length) sections.push(`<div class="section-row"><div><p class="section-kicker">NEEDS YOU</p><h3>需要你确认</h3></div></div><div class="bok-grid">${reviewRequired.map(claim => card(claim, true)).join("")}</div>`);
+  sections.push(`<div class="section-row"><div><p class="section-kicker">UNDERSTANDING</p><h3>已经形成的理解（${understanding.length}）</h3></div></div><div class="bok-grid">${understanding.map(claim => card(claim, false)).join("") || '<div class="empty-records"><strong>还在了解你</strong><p>随着长期使用，这里会逐渐形成画像。</p></div>'}</div>`);
+  $("#bokPersonList").innerHTML = sections.join("");
+}
+
+async function searchBok() {
+  const query = $("#bokSearchInput").value.trim();
+  if (!query) return;
+  $("#bokSearchResults").innerHTML = `<div class="empty-records"><strong>搜索中…</strong></div>`;
+  try {
+    const result = await bokFetch("search", { method: "POST", body: { query, limit: 12, token_budget: 2500, semantic: true } });
+    const items = result.results || [];
+    $("#bokSearchResults").innerHTML = items.map(item => `<article class="bok-card" data-open-path="${escapeHtml(item.path)}"><div class="bok-card-meta"><span>${escapeHtml(item.type || "note")}</span></div><h4>${escapeHtml(item.title || item.path)}</h4><p>${escapeHtml(item.snippet || "")}</p></article>`).join("") || `<div class="empty-records"><strong>没有找到匹配内容</strong><p>换一种说法试试。</p></div>`;
+  } catch (error) {
+    $("#bokSearchResults").innerHTML = `<div class="empty-records"><strong>搜索没有完成</strong><p>${escapeHtml(error.message)}</p></div>`;
+    toast(error.message, true);
+  }
+}
+
+async function saveBokQuickNote() {
+  const input = $("#bokQuickNoteInput");
+  const text = input.value.trim();
+  if (!text) return;
+  try {
+    await bokFetch("quick-notes", { method: "POST", body: { text, source: "boujoy-ui" }, idempotency: `boujoy-note-${Date.now()}` });
+    input.value = "";
+    toast("已保存速记");
+    loadBok();
+  } catch (error) {
+    toast(error.message, true);
+  }
+}
+
+async function bokAction(action, reference, node) {
+  try {
+    if (action === "commit") await bokFetch("memory/commit", { method: "POST", body: { proposal_id: reference, confirm_important: true }, idempotency: `boujoy-commit-${reference}` });
+    else if (action === "reject") await bokFetch("memory/reject", { method: "POST", body: { proposal_id: reference, reason: "boujoy-ui:user-rejection" }, idempotency: `boujoy-reject-${reference}` });
+    else if (action === "promote-note") await bokFetch("quick-notes/promote", { method: "POST", body: { path: reference }, idempotency: `boujoy-promote-${reference}` });
+    else if (action === "archive-note") await bokFetch("quick-notes/archive", { method: "POST", body: { path: reference, expected_hash: node?.dataset.bokHash || "" }, idempotency: `boujoy-archive-${reference}` });
+    else if (action === "confirm-claim") await bokFetch("person/claims/confirm", { method: "POST", body: { claim_id: reference, source_ref: "ui:boujoy-confirmation" }, idempotency: `boujoy-confirm-${reference}` });
+    else if (action === "reject-claim") await bokFetch("person/claims/reject", { method: "POST", body: { claim_id: reference, reason: "boujoy-ui:user-rejection", source_ref: "ui:boujoy-rejection" }, idempotency: `boujoy-reject-claim-${reference}` });
+    toast("已更新");
+    loadBok();
+  } catch (error) {
+    toast(error.message, true);
+  }
+}
+
 function bindEvents() {
   document.addEventListener("click", event => {
     const mediaButton = event.target.closest("[data-play-media]");
@@ -2869,6 +3006,10 @@ function bindEvents() {
     }
     const pageButton = event.target.closest("[data-page]");
     if (pageButton) { showPage(pageButton.dataset.page); return; }
+    const bokTabButton = event.target.closest("[data-bok-tab]");
+    if (bokTabButton) { setBokTab(bokTabButton.dataset.bokTab); return; }
+    const bokActionButton = event.target.closest("[data-bok-action]");
+    if (bokActionButton) { const [action, reference] = bokActionButton.dataset.bokAction.split(":"); bokAction(action, reference, bokActionButton); return; }
     const sessionButton = event.target.closest("[data-session-id]");
     if (sessionButton) { loadSession(sessionButton.dataset.sessionId); return; }
     const workspaceButton = event.target.closest("[data-workspace-id]");
@@ -3081,6 +3222,10 @@ function bindEvents() {
   $("#knowledgeGraphButton").addEventListener("click", openGraph);
   $("#knowledgeHealthButton").addEventListener("click", openHealth);
   $("#openActiveContext").addEventListener("click", () => openReader("00-System/Active-Context.md"));
+  $("#bokSearchButton").addEventListener("click", searchBok);
+  $("#bokSearchInput").addEventListener("keydown", event => { if (event.key === "Enter") searchBok(); });
+  $("#bokQuickNoteSave").addEventListener("click", saveBokQuickNote);
+  $("#bokRefresh").addEventListener("click", loadBok);
   $("#readerClose").addEventListener("click", () => $("#readerDialog").close());
   $("#readerBack").addEventListener("click", readerBack);
   $("#readerReveal").addEventListener("click", revealReader);

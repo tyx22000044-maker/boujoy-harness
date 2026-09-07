@@ -33,6 +33,7 @@
         <button class="nav-cut" data-page="styles"><span class="nav-number">04</span><strong>风格</strong><small>输出声线</small></button>
         <button class="nav-cut" data-page="monitor"><span class="nav-number">05</span><strong>监控</strong><small>用量与轨迹</small></button>
         <button class="nav-cut" data-page="news"><span class="nav-number">06</span><strong>新闻</strong><small>AI 动态与工具</small></button>
+        <button class="nav-cut" data-page="bok"><span class="nav-number">07</span><strong>Bok</strong><small>记忆工作台</small></button>
       </nav>
 
       <div class="rail-footer">
@@ -66,6 +67,7 @@
             <button class="mobile-nav-item" data-page="styles">🎨 风格</button>
             <button class="mobile-nav-item" data-page="monitor">📊 监控</button>
             <button class="mobile-nav-item" data-page="news">📰 新闻</button>
+            <button class="mobile-nav-item" data-page="bok">🧩 Bok</button>
             <button class="mobile-nav-item" id="mobileNavSettings">⚙ 设置</button>
             <button class="mobile-nav-item" id="mobileNavPair">📱 手机互联</button>
             <button class="mobile-nav-item" id="mobileNavNewSession">＋ 新会话</button>
@@ -266,6 +268,40 @@
             <div class="news-col-head"><h3>工具与模型动向</h3><span>TOOLS</span></div>
             <div id="toolsList" class="news-list"><p class="muted">主流模型与工具更新将显示在这里。</p></div>
           </div>
+        </div>
+      </section>
+
+      <section id="bokPage" class="page page-bok" data-page-panel="bok">
+        <div class="bok-header">
+          <div><p class="section-kicker">LOCAL MEMORY / MCP-READY</p><h2>Bok 记住的，<br><span>你能看见、能纠正。</span></h2></div>
+          <div class="bok-tabs">
+            <button class="bok-tab active" data-bok-tab="workbench">工作台</button>
+            <button class="bok-tab" data-bok-tab="person">关于我</button>
+          </div>
+        </div>
+
+        <div id="bokWorkbenchPanel" class="bok-panel active" data-bok-panel="workbench">
+          <div class="bok-toolbar">
+            <label class="search-cut"><span>⌕</span><input id="bokSearchInput" placeholder="搜索记忆…"></label>
+            <button id="bokSearchButton" class="mini-cut">搜索</button>
+            <button id="bokRefresh" class="mini-cut">↻ 刷新</button>
+          </div>
+          <div id="bokSearchResults" class="bok-grid"></div>
+
+          <div class="bok-quick-note">
+            <textarea id="bokQuickNoteInput" placeholder="随手记一句…"></textarea>
+            <button id="bokQuickNoteSave" class="mini-cut">保存速记</button>
+          </div>
+
+          <div class="section-row"><div><p class="section-kicker">MEMORY INBOX</p><h3>待确认的记忆</h3></div><span id="bokInboxCount">0 条</span></div>
+          <div id="bokInboxList" class="bok-grid"><div class="skeleton-card"></div></div>
+
+          <div class="section-row"><div><p class="section-kicker">QUICK NOTES</p><h3>速记</h3></div></div>
+          <div id="bokQuickNoteList" class="bok-grid"></div>
+        </div>
+
+        <div id="bokPersonPanel" class="bok-panel" data-bok-panel="person">
+          <div id="bokPersonList" class="bok-person-list"><p class="muted">加载中…</p></div>
         </div>
       </section>
     </main>
