@@ -2526,10 +2526,10 @@ function openGraph() {
     const target = byKey.get(link) ?? byKey.get(link.replace(/\.md$/i, ""));
     if (target != null && target !== source) edges.push([source, target]);
   }));
-  const colors = { project: "#2439ff", knowledge: "#d2ff00", content: "#ff2b8b", prompt: "#32e4d2", business: "#ffd629", skill: "#f1eadc", other: "#ff2b8b" };
+  const colors = { project: "var(--cat-1)", knowledge: "var(--cat-2)", content: "var(--cat-3)", prompt: "var(--cat-4)", business: "var(--cat-1)", skill: "var(--cat-4)", other: "var(--cat-3)" };
   $("#graphCanvas").innerHTML = `<svg viewBox="0 0 ${width} ${height}" role="img" aria-label="知识关系图">
     ${edges.map(([a,b]) => `<line class="graph-line" x1="${nodes[a].x}" y1="${nodes[a].y}" x2="${nodes[b].x}" y2="${nodes[b].y}"/>`).join("")}
-    ${nodes.map(({ item, x, y }, index) => `<g class="graph-node" data-graph-path="${escapeHtml(item.path)}" transform="translate(${x} ${y})"><circle r="${item.kind === "project" ? 12 : 8}" fill="${colors[item.kind] || colors.other}"/><text x="${item.kind === "project" ? 16 : 12}" y="3">${escapeHtml(String(item.title || item.path.split("/").pop() || "").slice(0,18))}</text></g>`).join("")}
+    ${nodes.map(({ item, x, y }, index) => `<g class="graph-node" data-graph-path="${escapeHtml(item.path)}" transform="translate(${x} ${y})"><circle r="${item.kind === "project" ? 12 : 8}" style="fill: ${colors[item.kind] || colors.other}"/><text x="${item.kind === "project" ? 16 : 12}" y="3">${escapeHtml(String(item.title || item.path.split("/").pop() || "").slice(0,18))}</text></g>`).join("")}
   </svg>`;
   $("#graphDialog").showModal();
 }
